@@ -1,0 +1,44 @@
+version: '3.8'
+services:
+  # server-1:
+  #   image: ubuntu:20.04
+  #   container_name: u-server-1
+  #   tty: true
+  #   expose:
+  #     - 22
+  #     - 1000
+  #     - 1001
+  #     - 1002
+  # server-2:
+  #   image: ubuntu:20.04
+  #   container_name: u-server-2
+  #   tty: true
+  #   expose:
+  #     - 22
+  #     - 1000
+  #     - 1001
+  #     - 1002
+  # server-3:
+  #   image: ubuntu:20.04
+  #   container_name: u-server-3
+  #   tty: true
+  #   expose:
+  #     - 22
+  #     - 1000
+  #     - 1001
+  #     - 1002
+  jenkin:
+    image: jenkins/jenkins:lts-jdk11
+    container_name: jenkins
+    ports:
+      - 8000:8000
+      - 8080:8080
+      # - 50000
+    volumes:
+      - ./data/jenkins:/var/jenkins_home
+
+# volumes:
+#   mongodb:
+# networks:
+  # minu_network:
+  #   driver: bridge
