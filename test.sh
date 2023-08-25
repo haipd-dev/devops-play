@@ -1,0 +1,3 @@
+docker run --name minu-cms-base-nginx -v /var/jenkins_home/workspace/green-blue/nginx-cms-base/default.conf:/etc/nginx/conf.d/default.conf:ro -d --restart=unless-stopped --network=wion-dev --log-opt max-size=1G --log-opt max-file=2 -p 9102:80 nginx:stable-alpine 
+
+docker run --name minu-cms-base-nginx -v /var/jenkins_home/workspace/green-blue/nginx-cms-base/default:/etc/nginx/conf.d/default:ro --restart=unless-stopped --network=wion-dev --log-opt max-size=1G --log-opt max-file=2 -p 9102:80 nginx:stable-alpine 

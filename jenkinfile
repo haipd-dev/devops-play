@@ -1,0 +1,51 @@
+
+pipeline {
+    environment {
+        FOLDER = '/var/jenkins_home/workspace/minu-cms-base'
+        ENV_FILE = '/var/jenkins_home/workspace/environment/minu-cms-base/.env'
+        CONTAINER_NAME = 'minu-cms-base'
+        REGISTRY_IMAGE = '398287634444.dkr.ecr.ap-southeast-1.amazonaws.com'
+        IMAGE_TAG = ''
+    }
+    agent {
+        label 'minu-dev'
+    }
+
+    stages {
+        // stage('Pull new code') {
+        //     steps {
+        //         dir(FOLDER) {
+        //             sh "rm -rf ${FOLDER}/*"
+        //             checkout scmGit(branches: [[name: '*/develop']], extensions: [], userRemoteConfigs: [[credentialsId: '73c7c86b-287c-44e0-ab8b-23218c6fc139', url: 'git@github.com:MINU-AI/minu-cms-base.git']])
+        //         }
+        //     }
+        // }
+        // stage('Build docker images') {
+        //     steps {
+        //         dir(FOLDER) {
+        //             script {
+        //                 sh 'docker build -t minu-cms-base:latest .'
+        //             }
+        //         }
+        //     }
+        // }
+
+        stage('Run Container') {
+            steps {
+                script {
+                    IS_GREEN_CONTAINER_RUNNING = sh(script: "docker ps -a --filter name=${CONTAINER_NAME}-GREEN --format {{.Names}}", returnStdout: true).trim() ? "${CONTAINER_NAME}-BLUE" : "${CONTAINER_NAME}-GREEN";
+                    RUNNING_CONTAINER = IS_GREEN_CONTAINER_RUNNING ?
+                    echo "RUNNING_CONTAINER: ${RUNNING_CONTAINER}"
+                }
+            }
+        }
+
+        stage('Run container') {
+            steps {
+                script {
+                    sh "docker rm -f ${CONTAINER_NAME} && docker run -d --name ${CONTAINER_NAME} -p 9101:3000 --env-file ${ENV_FILE} --restart unless-stopped --network=wion-dev minu-cms-base"
+                }
+            }
+        }
+    }
+}
