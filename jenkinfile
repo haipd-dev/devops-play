@@ -1,49 +1,107 @@
 
+def isContainerRunning(containerName) {
+    try {
+        sh(script : "docker container inspect -f '{{.State.Running}}' ${containerName}", returnStdout : true) ? true : false
+        }catch (Exception e) {
+        echo 'Meet exception'
+        return false
+    }
+}
 pipeline {
     environment {
         FOLDER = '/var/jenkins_home/workspace/minu-cms-base'
         ENV_FILE = '/var/jenkins_home/workspace/environment/minu-cms-base/.env'
         CONTAINER_NAME = 'minu-cms-base'
-        REGISTRY_IMAGE = '398287634444.dkr.ecr.ap-southeast-1.amazonaws.com'
+        IMAGE_REGISTRY_SERVER = '398287634444.dkr.ecr.ap-southeast-1.amazonaws.com'
         IMAGE_TAG = ''
+        NGINX_CONTAINER = 'minu-cms-base-nginx'
+        NGINX_CONFIG_FOLDER = '/var/jenkins_home/workspace/green-blue/nginx-cms-base'
     }
+
     agent {
         label 'minu-dev'
     }
 
     stages {
-        // stage('Pull new code') {
-        //     steps {
-        //         dir(FOLDER) {
-        //             sh "rm -rf ${FOLDER}/*"
-        //             checkout scmGit(branches: [[name: '*/develop']], extensions: [], userRemoteConfigs: [[credentialsId: '73c7c86b-287c-44e0-ab8b-23218c6fc139', url: 'git@github.com:MINU-AI/minu-cms-base.git']])
-        //         }
-        //     }
-        // }
-        // stage('Build docker images') {
-        //     steps {
-        //         dir(FOLDER) {
-        //             script {
-        //                 sh 'docker build -t minu-cms-base:latest .'
-        //             }
-        //         }
-        //     }
-        // }
-
-        stage('Run Container') {
+        stage('Pull new code') {
             steps {
-                script {
-                    IS_GREEN_CONTAINER_RUNNING = sh(script: "docker ps -a --filter name=${CONTAINER_NAME}-GREEN --format {{.Names}}", returnStdout: true).trim() ? "${CONTAINER_NAME}-BLUE" : "${CONTAINER_NAME}-GREEN";
-                    RUNNING_CONTAINER = IS_GREEN_CONTAINER_RUNNING ?
-                    echo "RUNNING_CONTAINER: ${RUNNING_CONTAINER}"
+                dir(FOLDER) {
+                    sh "rm -rf ${FOLDER}/*"
+                    checkout scmGit(branches: [[name: '*/develop']], extensions: [], userRemoteConfigs: [[credentialsId: 'minu-git-key', url: 'git@github.com:MINU-AI/minu-cms-base.git']])                }
+            }
+        }
+
+        stage('Build docker images') {
+            steps {
+                dir(FOLDER) {
+                    script {
+                        // get build id jenkins
+                        IMAGE = "${IMAGE_REGISTRY_SERVER}/${CONTAINER_NAME}:${BUILD_ID}"
+
+                        // push to ecr
+                        sh "aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin ${IMAGE_REGISTRY_SERVER}"
+                        // build image
+                        sh "docker build -t ${IMAGE} ."
+                        // push to ecr
+                        sh "docker push ${IMAGE}"
+                    }
                 }
             }
         }
 
-        stage('Run container') {
+        stage('Detect container') {
             steps {
                 script {
-                    sh "docker rm -f ${CONTAINER_NAME} && docker run -d --name ${CONTAINER_NAME} -p 9101:3000 --env-file ${ENV_FILE} --restart unless-stopped --network=wion-dev minu-cms-base"
+                    // IS_GREEN_CONTAINER_RUNNING = sh(script: "docker ps -a --filter name=${CONTAINER_NAME}-GREEN --format {{.Names}}", returnStdout: true).trim() ? "${CONTAINER_NAME}-BLUE" : "${CONTAINER_NAME}-GREEN";
+                    // catch exception in sh script jenkins
+                    // IS_GREEN_CONTAINER_RUNNING =
+                    try {
+                        IS_GREEN_CONTAINER_RUNNING = sh(script : "docker container inspect -f '{{.State.Running}}' ${CONTAINER_NAME}-GREEN", returnStdout : true) ? true : false
+                    }catch (Exception e) {
+                        echo 'Meet exception'
+                        IS_GREEN_CONTAINER_RUNNING = false
+                    }
+                    echo "IS_GREEN_CONTAINER_RUNNING: ${IS_GREEN_CONTAINER_RUNNING}"
+                    RUNNING_CONTAINER = IS_GREEN_CONTAINER_RUNNING ? "${CONTAINER_NAME}-GREEN" : "${CONTAINER_NAME}-BLUE"
+                    DEPLOY_CONTAINER = IS_GREEN_CONTAINER_RUNNING ? "${CONTAINER_NAME}-BLUE" : "${CONTAINER_NAME}-GREEN"
+                    CONFIG_FILE = IS_GREEN_CONTAINER_RUNNING ? "${NGINX_CONFIG_FOLDER}/blue.conf" : "${NGINX_CONFIG_FOLDER}/green.conf"
+                // echo "RUNNING_CONTAINER: ${RUNNING_CONTAINER}"
+                // echo "DEPLOY_CONTAINER: ${DEPLOY_CONTAINER}"
+                }
+            }
+        }
+
+        stage('Run new and test new container') {
+            steps {
+                echo "Run container: ${DEPLOY_CONTAINER}"
+                sh "docker rm -f ${DEPLOY_CONTAINER} && docker run -d --name ${DEPLOY_CONTAINER} --env-file ${ENV_FILE} --restart unless-stopped --network=wion-dev ${IMAGE}"
+                script {
+                    IS_CONTAINER_RUNNING = isContainerRunning(DEPLOY_CONTAINER)
+                    echo "IS_CONTAINER_RUNNING: ${IS_CONTAINER_RUNNING}"
+                    if (!IS_CONTAINER_RUNNING) {
+                        /// throw error in jenkin script
+                        throw new Error("${DEPLOY_CONTAINER} is not running")
+                    }
+                }
+            }
+        }
+
+        stage('Change nginx config and reaload nginx container') {
+            steps {
+                script {
+                    sh "cp ${CONFIG_FILE} ${NGINX_CONFIG_FOLDER}/default.conf"
+                    // Reload nginx container
+                    sh "docker exec ${NGINX_CONTAINER} nginx -s reload"
+                    echo 'Reloaded nginx container'
+                }
+            }
+        }
+
+        // stop running container
+        stage('Stop running container') {
+            steps {
+                script {
+                    sh "docker rm -f ${RUNNING_CONTAINER}"
                 }
             }
         }
